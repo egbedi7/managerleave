@@ -37,4 +37,18 @@ pipeline {
             echo 'Pipeline failed. Check the console output.'
         }
     }
+
+        stage('Deploy') {
+            steps {
+            sh '''
+            docker stop managerleave-app || true
+            docker rm managerleave-app || true
+            docker run -d \
+                --name managerleave-app \
+                -p 8094:8093 \
+                managerleave:1.0
+        '''
+        }
+    }
+
 }
