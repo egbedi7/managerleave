@@ -26,29 +26,28 @@ pipeline {
                 sh 'docker build -t managerleave:1.0 .'
             }
         }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    docker stop managerleave-app || true
+                    docker rm managerleave-app || true
+                    docker run -d \
+                        --name managerleave-app \
+                        -p 8094:8093 \
+                        managerleave:1.0
+                '''
+            }
+        }
     }
 
     post {
         success {
-            echo 'Build and Docker image creation successful!'
+            echo 'CI/CD pipeline completed successfully!'
         }
 
         failure {
             echo 'Pipeline failed. Check the console output.'
         }
     }
-}
-        stage('Deploy') {
-            steps {
-            sh '''
-            docker stop managerleave-app || true
-            docker rm managerleave-app || true
-            docker run -d \
-                --name managerleave-app \
-                -p 8094:8093 \
-                managerleave:1.0
-        '''
-        }
-    }
-
 }
