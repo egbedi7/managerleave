@@ -37,7 +37,7 @@ pipeline {
             echo 'Pipeline failed. Check the console output.'
         }
     }
-
+}
         stage('Deploy') {
             steps {
             sh '''
