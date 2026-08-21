@@ -23,7 +23,7 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                sh 'docker build -t managerleave:1.0 .'
+                sh 'docker build -t managerleave:1.1 .'
             }
         }
 
@@ -35,7 +35,7 @@ pipeline {
                     docker run -d \
                         --name managerleave-app \
                         -p 8094:8093 \
-                        managerleave:1.0
+                        managerleave:1.1
                 '''
             }
         }
