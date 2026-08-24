@@ -70,6 +70,7 @@ pipeline {
                     params.ACTION == 'DEPLOY'
         }
     }
+}
 
     steps {
         sh '''
@@ -92,7 +93,6 @@ pipeline {
           }
      }
 
-}
 
 
 
