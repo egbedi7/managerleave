@@ -15,6 +15,10 @@ pipeline {
         )
     }
 
+    environment {
+        PREVIOUS_IMAGE = ''
+    }
+
     stages {
 
         stage('Checkout') {
@@ -62,6 +66,25 @@ pipeline {
 
             steps {
                 sh 'docker build -t managerleave:${BUILD_NUMBER} .'
+            }
+        }
+
+        stage('Get Current Version') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
+
+            steps {
+                script {
+                    env.PREVIOUS_IMAGE = sh(
+                        script: "docker inspect managerleave-app --format '{{.Config.Image}}' 2>/dev/null || true",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Previous image: ${env.PREVIOUS_IMAGE}"
+                }
             }
         }
 
@@ -127,7 +150,7 @@ pipeline {
 
             steps {
                 sh '''
-                    echo "Rolling back to managerleave:${ROLLBACK_VERSION}"
+                    echo "Manual rollback to managerleave:${ROLLBACK_VERSION}"
 
                     docker stop managerleave-app || true
                     docker rm managerleave-app || true
@@ -142,12 +165,30 @@ pipeline {
     }
 
     post {
-        success {
-            echo 'CI/CD pipeline completed successfully!'
+        failure {
+            script {
+                if (params.ACTION == 'DEPLOY' && env.PREVIOUS_IMAGE?.trim()) {
+
+                    echo "Deployment failed."
+                    echo "Rolling back to ${env.PREVIOUS_IMAGE}"
+
+                    sh """
+                        docker stop managerleave-app || true
+                        docker rm managerleave-app || true
+
+                        docker run -d \
+                            --name managerleave-app \
+                            -p 8094:8093 \
+                            ${env.PREVIOUS_IMAGE}
+                    """
+
+                    echo "Rollback completed."
+                }
+            }
         }
 
-        failure {
-            echo 'Pipeline failed. Check the console output.'
+        success {
+            echo 'CI/CD pipeline completed successfully!'
         }
     }
 }
