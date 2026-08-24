@@ -1,194 +1,153 @@
 pipeline {
     agent any
 
-    parameters {
-        choice(
-            name: 'ACTION',
-            choices: ['DEPLOY', 'ROLLBACK'],
-            description: 'Choose whether to deploy the new build or rollback'
-        )
-
-        string(
-            name: 'ROLLBACK_VERSION',
-            defaultValue: '1.0',
-            description: 'Docker image version to rollback to'
-        )
-    }
-
     environment {
-        PREVIOUS_IMAGE = ''
+        APP_NAME = 'managerleave-app'
+        HOST_PORT = '8094'
+        CONTAINER_PORT = '8093'
+        IMAGE_NAME = 'managerleave'
     }
 
     stages {
 
         stage('Checkout') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
                 checkout scm
             }
         }
 
         stage('Test') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
                 sh 'mvn test'
             }
         }
 
         stage('Package') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
                 sh 'mvn clean package'
             }
         }
 
         stage('Docker Build') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
-                sh 'docker build -t managerleave:${BUILD_NUMBER} .'
+                script {
+                    env.NEW_IMAGE = "${IMAGE_NAME}:${BUILD_NUMBER}"
+
+                    sh """
+                        docker build -t ${NEW_IMAGE} .
+                    """
+                }
             }
         }
 
         stage('Get Current Version') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
                 script {
-                    env.PREVIOUS_IMAGE = sh(
-                        script: "docker inspect managerleave-app --format '{{.Config.Image}}' 2>/dev/null || true",
+                    def previousImage = sh(
+                        script: """
+                            docker inspect ${APP_NAME} \
+                            --format='{{.Config.Image}}' 2>/dev/null || true
+                        """,
                         returnStdout: true
                     ).trim()
 
-                    echo "Previous image: ${env.PREVIOUS_IMAGE}"
+                    if (previousImage) {
+                        env.PREVIOUS_IMAGE = previousImage
+                        echo "Previous image: ${env.PREVIOUS_IMAGE}"
+                    } else {
+                        env.PREVIOUS_IMAGE = ''
+                        echo "No previous container found. This is the first deployment."
+                    }
                 }
             }
         }
 
         stage('Deploy New Version') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
-                sh '''
-                    echo "Deploying managerleave:${BUILD_NUMBER}"
+                sh """
+                    echo "Deploying ${NEW_IMAGE}"
 
-                    docker stop managerleave-app || true
-                    docker rm managerleave-app || true
+                    docker stop ${APP_NAME} || true
+                    docker rm ${APP_NAME} || true
 
                     docker run -d \
-                        --name managerleave-app \
-                        -p 8094:8093 \
-                        managerleave:${BUILD_NUMBER}
-                '''
+                        --name ${APP_NAME} \
+                        -p ${HOST_PORT}:${CONTAINER_PORT} \
+                        ${NEW_IMAGE}
+                """
             }
         }
 
         stage('Health Check') {
-            when {
-                expression {
-                    params.ACTION == 'DEPLOY'
-                }
-            }
-
             steps {
-                sh '''
-                    echo "Waiting for application to start..."
+                script {
+                    sh '''
+                        echo "Waiting for application to start..."
 
-                    for i in $(seq 1 12)
-                    do
-                        echo "Health check attempt $i..."
+                        for i in $(seq 1 12)
+                        do
+                            echo "Health check attempt $i..."
 
-                        if curl -fs http://localhost:8094/actuator/health; then
-                            echo ""
-                            echo "Application is healthy!"
-                            exit 0
-                        fi
+                            if curl -fs http://localhost:8094/actuator/health; then
+                                echo ""
+                                echo "Application is healthy!"
+                                exit 0
+                            fi
 
-                        echo "Application not ready yet..."
-                        sleep 5
-                    done
+                            echo "Application not ready yet..."
+                            sleep 5
+                        done
 
-                    echo "Application failed health check."
-                    exit 1
-                '''
+                        echo "Health check failed!"
+                        exit 1
+                    '''
+                }
             }
         }
 
         stage('Rollback') {
             when {
                 expression {
-                    params.ACTION == 'ROLLBACK'
+                    currentBuild.currentResult == 'FAILURE' &&
+                    env.PREVIOUS_IMAGE?.trim()
                 }
             }
 
             steps {
-                sh '''
-                    echo "Manual rollback to managerleave:${ROLLBACK_VERSION}"
+                script {
+                    echo "Rolling back to ${env.PREVIOUS_IMAGE}"
 
-                    docker stop managerleave-app || true
-                    docker rm managerleave-app || true
+                    sh """
+                        docker stop ${APP_NAME} || true
+                        docker rm ${APP_NAME} || true
 
-                    docker run -d \
-                        --name managerleave-app \
-                        -p 8094:8093 \
-                        managerleave:${ROLLBACK_VERSION}
-                '''
+                        docker run -d \
+                            --name ${APP_NAME} \
+                            -p ${HOST_PORT}:${CONTAINER_PORT} \
+                            ${PREVIOUS_IMAGE}
+                    """
+
+                    sleep 10
+
+                    sh '''
+                        curl -fs http://localhost:8094/actuator/health
+                    '''
+
+                    echo "Rollback completed successfully!"
+                }
             }
         }
     }
 
     post {
-        failure {
-            script {
-                if (params.ACTION == 'DEPLOY' && env.PREVIOUS_IMAGE?.trim()) {
-
-                    echo "Deployment failed."
-                    echo "Rolling back to ${env.PREVIOUS_IMAGE}"
-
-                    sh """
-                        docker stop managerleave-app || true
-                        docker rm managerleave-app || true
-
-                        docker run -d \
-                            --name managerleave-app \
-                            -p 8094:8093 \
-                            ${env.PREVIOUS_IMAGE}
-                    """
-
-                    echo "Rollback completed."
-                }
-            }
+        success {
+            echo "CI/CD pipeline completed successfully!"
+            echo "Application deployed using image: ${env.NEW_IMAGE}"
         }
 
-        success {
-            echo 'CI/CD pipeline completed successfully!'
+        failure {
+            echo "Pipeline failed."
+            echo "Previous image was: ${env.PREVIOUS_IMAGE}"
         }
     }
 }
