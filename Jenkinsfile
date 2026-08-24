@@ -98,9 +98,10 @@ pipeline {
                 sh '''
                     echo "Waiting for application to start..."
 
-                    for i in $(seq 1 12}
+                    for i in $(seq 1 12)
                     do
                         echo "Health check attempt $i..."
+
                         if curl -fs http://localhost:8094/actuator/health; then
                             echo ""
                             echo "Application is healthy!"
