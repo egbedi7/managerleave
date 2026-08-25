@@ -92,7 +92,7 @@ pipeline {
                             do
                                 echo "Health check attempt $i..."
 
-                                if curl -fs http://localhost:8999/actuator/health; then
+                                if curl -fs http://localhost:8094/actuator/health; then
                                     echo ""
                                     echo "Application is healthy!"
                                     exit 0
