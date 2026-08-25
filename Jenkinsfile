@@ -36,6 +36,8 @@ pipeline {
                     sh """
                         docker build -t ${NEW_IMAGE} .
                     """
+
+                    echo "Built image: ${env.NEW_IMAGE}"
                 }
             }
         }
@@ -56,7 +58,7 @@ pipeline {
                         echo "Previous image: ${env.PREVIOUS_IMAGE}"
                     } else {
                         env.PREVIOUS_IMAGE = ''
-                        echo "No previous container found. This is the first deployment."
+                        echo "No previous container found."
                     }
                 }
             }
@@ -81,65 +83,90 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    sh '''
-                        echo "Waiting for application to start..."
 
-                        for i in $(seq 1 12)
-                        do
-                            echo "Health check attempt $i..."
+                    def healthResult = sh(
+                        script: '''
+                            echo "Waiting for application to start..."
 
-                            if curl -fs http://localhost:9999/actuator/health; then
-                                echo ""
-                                echo "Application is healthy!"
-                                exit 0
-                            fi
+                            for i in $(seq 1 12)
+                            do
+                                echo "Health check attempt $i..."
 
-                            echo "Application not ready yet..."
-                            sleep 5
-                        done
+                                if curl -fs http://localhost:9999/actuator/health; then
+                                    echo ""
+                                    echo "Application is healthy!"
+                                    exit 0
+                                fi
 
-                        echo "Health check failed!"
-                        exit 1
-                    '''
-                }
-            }
-        }
+                                echo "Application not ready yet..."
+                                sleep 5
+                            done
 
-        stage('Rollback') {
-            when {
-                expression {
-                    currentBuild.currentResult == 'FAILURE' &&
-                    env.PREVIOUS_IMAGE?.trim()
-                }
-            }
+                            echo "Health check failed!"
+                            exit 1
+                        ''',
+                        returnStatus: true
+                    )
 
-            steps {
-                script {
-                    echo "Rolling back to ${env.PREVIOUS_IMAGE}"
+                    if (healthResult != 0) {
 
-                    sh """
-                        docker stop ${APP_NAME} || true
-                        docker rm ${APP_NAME} || true
+                        echo "New deployment failed health check."
 
-                        docker run -d \
-                            --name ${APP_NAME} \
-                            -p ${HOST_PORT}:${CONTAINER_PORT} \
-                            ${PREVIOUS_IMAGE}
-                    """
+                        if (env.PREVIOUS_IMAGE?.trim()) {
 
-                    sleep 10
+                            echo "Starting rollback..."
+                            echo "Rolling back to ${env.PREVIOUS_IMAGE}"
 
-                    sh '''
-                        curl -fs http://localhost:8094/actuator/health
-                    '''
+                            sh """
+                                docker stop ${APP_NAME} || true
+                                docker rm ${APP_NAME} || true
 
-                    echo "Rollback completed successfully!"
+                                docker run -d \
+                                    --name ${APP_NAME} \
+                                    -p ${HOST_PORT}:${CONTAINER_PORT} \
+                                    ${PREVIOUS_IMAGE}
+                            """
+
+                            echo "Waiting for rollback application..."
+
+                            sh '''
+                                for i in $(seq 1 12)
+                                do
+                                    echo "Rollback health check attempt $i..."
+
+                                    if curl -fs http://localhost:8094/actuator/health; then
+                                        echo ""
+                                        echo "Rollback successful!"
+                                        exit 0
+                                    fi
+
+                                    echo "Rollback application not ready yet..."
+                                    sleep 5
+                                done
+
+                                echo "Rollback health check failed!"
+                                exit 1
+                            '''
+
+                            echo "Rollback completed successfully."
+
+                        } else {
+
+                            echo "No previous image available."
+                            echo "Cannot perform rollback."
+
+                            sh 'exit 1'
+                        }
+
+                        error("New deployment failed. Previous version restored.")
+                    }
                 }
             }
         }
     }
 
     post {
+
         success {
             echo "CI/CD pipeline completed successfully!"
             echo "Application deployed using image: ${env.NEW_IMAGE}"
@@ -151,3 +178,111 @@ pipeline {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
